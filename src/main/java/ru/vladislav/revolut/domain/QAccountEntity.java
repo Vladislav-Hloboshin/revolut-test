@@ -19,6 +19,8 @@ public class QAccountEntity extends RelationalPathBase<QAccountEntity> {
 
     public QAccountEntity(String variable) {
         super(QAccountEntity.class, forVariable(variable), "", "ACCOUNT");
+        addMetadata(id, null);
+        addMetadata(balance, null);
     }
 
 }

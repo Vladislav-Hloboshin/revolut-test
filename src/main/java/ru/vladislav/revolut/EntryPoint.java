@@ -1,57 +1,52 @@
 package ru.vladislav.revolut;
 
-import org.slf4j.LoggerFactory;
-import ru.vladislav.revolut.controller.MoneyController;
-import ru.vladislav.revolut.exception.BadRequestException;
+import com.querydsl.sql.HSQLDBTemplates;
+import com.zaxxer.hikari.HikariConfig;
+import com.zaxxer.hikari.HikariDataSource;
+import ru.vladislav.revolut.controller.DefaultWebController;
 import ru.vladislav.revolut.exception.BaseRestException;
+import ru.vladislav.revolut.querydsl.QueryDSLDataSource;
+import ru.vladislav.revolut.repository.AccountRepository;
+import ru.vladislav.revolut.service.MoneyService;
 
-import java.util.Arrays;
-import java.util.Map;
-import java.util.stream.Collectors;
+import javax.sql.DataSource;
 
-import static spark.Spark.exception;
-import static spark.Spark.get;
-import static spark.Spark.post;
+import java.sql.Connection;
+import java.sql.SQLException;
+import java.sql.Statement;
+
+import static spark.Spark.*;
 
 public class EntryPoint {
-    private static final MoneyController moneyController = new MoneyController();
 
-    public static void main(String[] args) {
+    static DataSource createDataSource() throws SQLException {
+        HikariConfig config = new HikariConfig();
+        config.setJdbcUrl("jdbc:hsqldb:mem:localhost");
+        config.setUsername("sa");
+        config.setPassword("");
+        config.setLeakDetectionThreshold(5*1000);
+        DataSource ds = new HikariDataSource(config);
 
-        post("/transaction", (req, res) -> {
-            if(!"application/x-www-form-urlencoded".equals(req.contentType())) {
-                throw new BadRequestException("ContentType must be 'application/x-www-form-urlencoded'");
-            }
+        // create table and populate data
+        try(Connection connection = ds.getConnection()) {
+            Statement statement = connection.createStatement();
 
-            int accountIdFrom;
-            int accountIdTo;
-            long amount;
-            try {
-                Map<String,String> params = Arrays.stream(req.body().split("&"))
-                        .map(x->x.split("="))
-                        .collect(Collectors.toMap(x->x[0], x->x[1]));
+            statement.executeUpdate("CREATE TABLE account(id INTEGER PRIMARY KEY, balance BIGINT NOT NULL);");
+            statement.execute("INSERT INTO account(id, balance) VALUES 0,1000000;");
+            statement.execute("INSERT INTO account(id, balance) VALUES 1,1000000;");
+        }
+        return ds;
+    }
 
-                accountIdFrom = Integer.parseInt(params.get("accountIdFrom"));
-                accountIdTo = Integer.parseInt(params.get("accountIdTo"));
-                amount = Long.parseLong(params.get("amount"));
-            } catch (Exception e) {
-                throw new BadRequestException(e);
-            }
+    public static void main(String[] args) throws SQLException {
+        QueryDSLDataSource queryDSLDataSource = new QueryDSLDataSource(createDataSource(), HSQLDBTemplates.DEFAULT);
+        AccountRepository accountRepository = new AccountRepository();
+        MoneyService moneyService = new MoneyService(queryDSLDataSource, accountRepository);
+        DefaultWebController defaultWebController = new DefaultWebController(moneyService);
 
-            moneyController.transfer(accountIdFrom, accountIdTo, amount);
-            return "SUCCESS";
-        });
+        post("/transaction", defaultWebController::createTransaction);
 
-        get("/accounts/:accountId/balance", (req, res) -> {
-            int accountId;
-            try {
-                accountId = Integer.parseInt(req.params("accountId"));
-            } catch (NumberFormatException e) {
-                throw new BadRequestException(e);
-            }
-            
-            return moneyController.getBalance(accountId);
-        });
+        get("/accounts/:accountId/balance", defaultWebController::getBalance);
 
         exception(BaseRestException.class, (exception, request, response) -> {
             response.status( ((BaseRestException)exception).getHttpCode() );
