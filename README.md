@@ -1,6 +1,11 @@
 # revolut-test
 
-Use this command for run project:<br>
+For run this project use zip file from release section of this repository.<br>
+Choose the appropriate executable file:<br>
+<b>bin/RevolutTestApp</b> - *NIX OS<br>
+<b>bin/RevolutTestApp.bat</b> - WINDOWS OS
+
+Or use this command for run project from source:<br>
 <b>mvn compile exec:java</b>
 
 By default there are two accounts with ids 0 and 1.
